@@ -1,4 +1,5 @@
 # .github/workflows/ci.yml
+
 name: CI/CD MLOps
 
 ######################################################################
@@ -185,13 +186,13 @@ jobs:
         run: |
           export DOCKER_HOST="tcp://localhost:2375"
           python3 - <<EOF
-import mlflow
-from mlflow.tracking import MlflowClient
-mlflow.set_tracking_uri("http://localhost:5000")
-client = MlflowClient()
-versions = client.search_model_versions("name='${{ env.MODEL_NAME }}'")
-print("Model versions encontradas:", len(versions))
-EOF
+          import mlflow
+          from mlflow.tracking import MlflowClient
+          mlflow.set_tracking_uri("http://localhost:5000")
+          client = MlflowClient()
+          versions = client.search_model_versions("name='${{ env.MODEL_NAME }}'")
+          print("Model versions encontradas:", len(versions))
+          EOF
 
       - name: 🔍 Smoke Test: Streamlit Home
         run: |
