@@ -1,0 +1,9 @@
+mlflow
+scikit-learn
+pandas
+numpy
+imbalanced-learn          # por si requieres balanceo
+matplotlib                 # reportes
+boto3                      # artefact store
+psycopg2-binary
+shap

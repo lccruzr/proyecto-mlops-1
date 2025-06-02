@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+data/raw/
+data/shap/
+pgdata/
+mlflow_store/
+logs/
+mlruns/
+.env
+plugins/

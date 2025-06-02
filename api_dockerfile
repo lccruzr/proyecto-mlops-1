@@ -1,0 +1,18 @@
+FROM python:3.7.16-slim
+
+COPY ./ml/requirements.txt requirements.txt
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install dependencies (no build tools needed)
+RUN pip install --no-cache-dir uvicorn[standard] fastapi dill==0.3.1.1 psutil==5.9.5
+
+ENV MLFLOW_TRACKING_URI=http://mlflow:5000 \
+    MODEL_NAME=diabetes_random_forest \
+    MODEL_STAGE=Production \
+    PYTHONUNBUFFERED=1
+
+COPY api/app.py /app.py
+
+# Expose 8000 for uvicorn
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
