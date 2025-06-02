@@ -1,131 +1,94 @@
-# .github/workflows/ci.yml
-
 name: CI/CD MLOps
 
-######################################################################
-# 1) Disparadores
-######################################################################
 on:
   push:
-    branches:
-      - main
-      - desarrollo
+    branches: [main, desarrollo]
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
-######################################################################
-# 2) Variables de entorno globales
-######################################################################
 env:
   MODEL_NAME: "realtor_rf"
   MODEL_STAGE: "Production"
   MLFLOW_URI: "http://mlflow:5000"
 
-######################################################################
-# 3) JOB #1: lint_and_validate -> flake8, compileall, airflow DAGs, pytest
-######################################################################
 jobs:
+################################################################################
+# 1) LINT + TEST
+################################################################################
   lint_and_validate:
-    name: 🐍 Lint & Validar Código y DAGs
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout del repositorio
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: ⚙️ Configurar Python 3.8
+      - name: Setup Python 3.8
         uses: actions/setup-python@v4
         with:
           python-version: "3.8"
 
-      - name: 📦 Instalar dependencias de desarrollo
+      - name: Install dev deps
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install flake8 pytest apache-airflow==2.6.0
 
-      - name: 🔍 Ejecutar flake8
-        run: |
-          flake8 --max-line-length=120 --ignore=E203,W503 .
+      - name: Flake8
+        run: flake8 --max-line-length=120 --ignore=E203,W503 .
 
-      - name: ✅ Comprobar sintaxis Python
-        run: |
-          python -m compileall .
+      - name: Syntax check
+        run: python -m compileall .
 
-      - name: ☁️ Validar DAGs de Airflow
+      - name: Validate Airflow DAGs
         run: |
           export AIRFLOW_HOME=$(pwd)
           export AIRFLOW__CORE__DAGS_FOLDER=$(pwd)/dags
           airflow db init
           airflow dags list
 
-      - name: 🧪 Ejecutar pytest
-        run: |
-          pytest --maxfail=1 --disable-warnings -q
+      - name: pytest
+        run: pytest --maxfail=1 --disable-warnings -q
 
-######################################################################
-# 4) JOB #2: build_and_push -> Build y Push de todas las imágenes Docker
-######################################################################
+################################################################################
+# 2) BUILD & PUSH
+################################################################################
   build_and_push:
-    name: 🐋 Build & Push Docker Images
     runs-on: ubuntu-latest
     needs: lint_and_validate
 
     steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: ⚙️ Configurar Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      - uses: docker/setup-buildx-action@v2
 
-      - name: 📌 Loguearse en Docker Hub
-        uses: docker/login-action@v2
+      - uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-      - name: 🔨 Build Airflow Image
-        run: |
-          docker build \
-            --file airflow_dockerfile \
-            --tag lccruzr9606/proyecto-airflow:latest \
-            .
+      - name: Build Airflow
+        run: docker build -f airflow_dockerfile -t lccruzr9606/proyecto-airflow:latest .
 
-      - name: 🔨 Build Realtor API Image
-        working-directory: ./api
-        run: |
-          docker build \
-            --file ../api_dockerfile \
-            --tag lccruzr9606/realtor-api:latest \
-            .
+      - name: Build API
+        working-directory: api
+        run: docker build -f ../api_dockerfile -t lccruzr9606/realtor-api:latest .
 
-      - name: 🔨 Build MLflow Image
-        run: |
-          docker build \
-            --file mlflow_dockerfile \
-            --tag lccruzr9606/mlflow-server:latest \
-            .
+      - name: Build MLflow
+        run: docker build -f mlflow_dockerfile -t lccruzr9606/mlflow-server:latest .
 
-      - name: 🔨 Build Streamlit Image
-        working-directory: ./ui
-        run: |
-          docker build \
-            --file ../streamlit_dockerfile \
-            --tag lccruzr9606/realtor-streamlit:latest \
-            .
+      - name: Build Streamlit
+        working-directory: ui
+        run: docker build -f ../streamlit_dockerfile -t lccruzr9606/realtor-streamlit:latest .
 
-      - name: 🚀 Push Docker Images
+      - name: Push images
         run: |
           docker push lccruzr9606/proyecto-airflow:latest
           docker push lccruzr9606/realtor-api:latest
           docker push lccruzr9606/mlflow-server:latest
           docker push lccruzr9606/realtor-streamlit:latest
 
-######################################################################
-# 5) JOB #3: integration_test -> Levantar stack con docker-compose + Smoke Tests
-######################################################################
+################################################################################
+# 3) INTEGRATION TEST
+################################################################################
   integration_test:
-    name: 🧪 Integration Test con docker-compose
     runs-on: ubuntu-latest
     needs: build_and_push
 
@@ -137,74 +100,55 @@ jobs:
           - 2375:2375
 
     steps:
-      - name: 📥 Checkout del repositorio
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: ⚙️ Configurar cliente Docker para DinD
-        run: |
-          export DOCKER_HOST="tcp://localhost:2375"
-          docker version
-
-      - name: 📌 Loguearse en Docker Hub
+      - name: Login Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-      - name: 🔽 Pull de las imágenes Docker
+      - name: Pull images
         run: |
-          export DOCKER_HOST="tcp://localhost:2375"
+          export DOCKER_HOST=tcp://localhost:2375
           docker pull lccruzr9606/proyecto-airflow:latest
           docker pull lccruzr9606/realtor-api:latest
           docker pull lccruzr9606/mlflow-server:latest
           docker pull lccruzr9606/realtor-streamlit:latest
 
-      - name: 📁 Copiar docker-compose para CI
-        run: |
-          cp docker-compose.yml ci-docker-compose.yml
+      - name: Prepare compose
+        run: cp docker-compose.yml ci-docker-compose.yml
 
-      - name: 🧰 Levantar stack en segundo plano
+      - name: Compose up
         run: |
-          export DOCKER_HOST="tcp://localhost:2375"
+          export DOCKER_HOST=tcp://localhost:2375
           docker compose -f ci-docker-compose.yml up -d --wait
 
-      - name: ⏳ Esperar ~20 segundos para arranque completo
-        run: |
-          sleep 20
+      - name: Wait for stack
+        run: sleep 20
 
-      - name: 🔍 Smoke Test: Realtor API Health
+      - name: Smoke Realtor API
         run: |
-          set -e
-          HTTP_STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health)
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "❌ Realtor API health devolvió $HTTP_STATUS"
-            exit 1
-          fi
-          echo "✔ Realtor API health OK"
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health)
+          [ "$code" = "200" ]
 
-      - name: 🔍 Smoke Test: MLflow Model Registry
+      - name: Smoke MLflow
         run: |
-          export DOCKER_HOST="tcp://localhost:2375"
           python3 - <<EOF
-          import mlflow
-          from mlflow.tracking import MlflowClient
-          mlflow.set_tracking_uri("http://localhost:5000")
-          client = MlflowClient()
-          versions = client.search_model_versions("name='${{ env.MODEL_NAME }}'")
-          print("Model versions encontradas:", len(versions))
-          EOF
+import mlflow
+from mlflow.tracking import MlflowClient
+mlflow.set_tracking_uri("http://localhost:5000")
+client = MlflowClient()
+print("Encontradas", len(client.search_model_versions("name='${{ env.MODEL_NAME }}'")), "versiones")
+EOF
 
-      - name: 🔍 Smoke Test: Streamlit Home
+      - name: Smoke Streamlit
         run: |
-          HTTP_STATUS2=$(curl -L -s -o /dev/null -w '%{http_code}' http://localhost:8501)
-          if [ "$HTTP_STATUS2" != "200" ]; then
-            echo "❌ Streamlit home devolvió $HTTP_STATUS2"
-            exit 1
-          fi
-          echo "✔ Streamlit home OK"
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8501)
+          [ "$code" = "200" ]
 
-      - name: 🧹 Apagar y limpiar todo
+      - name: Compose down
         if: always()
         run: |
-          export DOCKER_HOST="tcp://localhost:2375"
+          export DOCKER_HOST=tcp://localhost:2375
           docker compose -f ci-docker-compose.yml down -v
