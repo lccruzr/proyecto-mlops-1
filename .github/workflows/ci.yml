@@ -1,0 +1,254 @@
+# Archivo: .github/workflows/ci.yml
+
+name: CI/CD MLOps
+
+######################################################################
+# 1) Disparadores
+######################################################################
+on:
+  push:
+    branches:
+      - main
+      - desarrollo
+  pull_request:
+    branches:
+      - main
+
+######################################################################
+# 2) Variables de entorno globales (puedes acceder a ellas con ${{ env.VAR }})
+######################################################################
+env:
+  MODEL_NAME: "realtor_rf"
+  MODEL_STAGE: "Production"
+  # Este valor se usará en los smoke tests para MLflow
+  MLFLOW_URI: "http://mlflow:5000"
+
+######################################################################
+# 3) JOB #1: lint_and_validate -> flake8, compileall, airflow DAGs, pytest
+######################################################################
+jobs:
+  lint_and_validate:
+    name: 🐍 Lint & Validar Código y DAGs
+    runs-on: ubuntu-latest
+
+    steps:
+      # 3.1 Hacer checkout del repositorio
+      - name: 📥 Checkout
+        uses: actions/checkout@v3
+
+      # 3.2 Configurar Python 3.8 (mismo que usas local)
+      - name: ⚙️ Setup Python 3.8
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.8"
+
+      # 3.3 Instalar dependencias de desarrollo (flake8, pytest, Airflow)
+      - name: 📦 Instalar dependencias de dev
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest apache-airflow==2.6.0
+
+      # 3.4 Ejecutar flake8 sobre todo el repositorio
+      #     (toma en cuenta las carpetas api/, dags/, ui/, etc.)
+      - name: 🔍 Flake8 Lint
+        run: |
+          flake8 --max-line-length=120 --ignore=E203,W503 .
+
+      # 3.5 Comprobar que no haya errores de sintaxis en Python
+      - name: ✅ Comprobar sintaxis Python
+        run: |
+          python -m compileall .
+
+      # 3.6 Validar que los DAGs de Airflow no arrojen errores de importación
+      #     Se le indica a Airflow que lea los DAGs desde ./dags
+      - name: ☁️ Validar DAGs de Airflow
+        run: |
+          export AIRFLOW_HOME=$(pwd)
+          export AIRFLOW__CORE__DAGS_FOLDER=$(pwd)/dags
+          # Inicializa una base de datos sqlite temporal
+          airflow db init
+          # Lista los DAGs; si alguno tiene error de import, fallará
+          airflow dags list
+
+      # 3.7 Ejecutar pytest (por ejemplo, para test_s3_artifacts.py en dags/)
+      - name: 🧪 Ejecutar pytest
+        run: |
+          pytest --maxfail=1 --disable-warnings -q
+
+######################################################################
+# 4) JOB #2: build_and_push -> Build y Push de todas las imágenes Docker
+######################################################################
+  build_and_push:
+    name: 🐋 Build & Push Docker Images
+    runs-on: ubuntu-latest
+    needs: lint_and_validate
+
+    steps:
+      # 4.1 Checkout
+      - name: 📥 Checkout
+        uses: actions/checkout@v3
+
+      # 4.2 Configurar Docker Buildx para builds avanzados
+      - name: ⚙️ Setup Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      # 4.3 Loguearse en Docker Hub (o tu registry)
+      - name: 📌 Login Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      # 4.4 Construir imagen de Airflow
+      - name: 🔨 Build Airflow Image
+        run: |
+          docker build \
+            --file airflow_dockerfile \
+            --tag tuusuario/proyecto-airflow:latest \
+            .
+
+      # 4.5 Construir imagen del API (FastAPI)
+      - name: 🔨 Build Realtor API Image
+        working-directory: ./api
+        run: |
+          # Contexto . -> dentro de carpeta api/
+          # Dockerfile se llama api_dockerfile y está en la raíz,
+          # así que debemos referenciarlo con ../api_dockerfile
+          docker build \
+            --file ../api_dockerfile \
+            --tag tuusuario/realtor-api:latest \
+            .
+
+      # 4.6 Construir imagen de MLflow Server
+      - name: 🔨 Build MLflow Image
+        run: |
+          docker build \
+            --file mlflow_dockerfile \
+            --tag tuusuario/mlflow-server:latest \
+            .
+
+      # 4.7 Construir imagen de Streamlit (UI)
+      - name: 🔨 Build Streamlit Image
+        working-directory: ./ui
+        run: |
+          # Dockerfile se llama streamlit_dockerfile en la raíz
+          docker build \
+            --file ../streamlit_dockerfile \
+            --tag tuusuario/realtor-streamlit:latest \
+            .
+
+      # 4.8 Push de cada imagen al registry
+      - name: 🚀 Push Docker Images
+        run: |
+          docker push tuusuario/proyecto-airflow:latest
+          docker push tuusuario/realtor-api:latest
+          docker push tuusuario/mlflow-server:latest
+          docker push tuusuario/realtor-streamlit:latest
+
+######################################################################
+# 5) JOB #3: integration_test -> Levantar stack con docker-compose + Smoke Tests
+######################################################################
+  integration_test:
+    name: 🧪 Integration Test con docker-compose
+    runs-on: ubuntu-latest
+    needs: build_and_push
+
+    services:
+      docker:
+        image: docker:20.10.16-dind
+        options: --privileged
+        ports:
+          - 2375:2375
+
+    steps:
+      # 5.1 Checkout del repo
+      - name: 📥 Checkout
+        uses: actions/checkout@v3
+
+      # 5.2 Configurar variable DOCKER_HOST para DinD
+      - name: ⚙️ Setup Docker client para DinD
+        run: |
+          export DOCKER_HOST="tcp://localhost:2375"
+          docker version
+
+      # 5.3 Loguearse en Docker Hub para poder hacer pull
+      - name: 📌 Docker Hub Login
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      # 5.4 Descargar (pull) las imágenes recién publicadas
+      - name: 🔽 Pull Docker Images
+        run: |
+          export DOCKER_HOST="tcp://localhost:2375"
+          # Usa los mismos tags que en build_and_push
+          docker pull tuusuario/proyecto-airflow:latest
+          docker pull tuusuario/realtor-api:latest
+          docker pull tuusuario/mlflow-server:latest
+          docker pull tuusuario/realtor-streamlit:latest
+
+      # 5.5 Copiar docker-compose.yml a un archivo temporal (ci-docker-compose.yml)
+      #     Esto ayuda a DinD a no confundirse con rutas relativas
+      - name: 📁 Preparar docker-compose para CI
+        run: |
+          cp docker-compose.yml ci-docker-compose.yml
+
+      # 5.6 Levantar el stack completo en segundo plano
+      - name: 🧰 Levantar stack (docker-compose up -d)
+        run: |
+          export DOCKER_HOST="tcp://localhost:2375"
+          docker compose -f ci-docker-compose.yml up -d --wait
+
+      # 5.7 Esperar ~20 segundos para que MinIO, MLflow, API y Streamlit arranquen
+      - name: ⏳ Esperar inicio de servicios
+        run: |
+          sleep 20
+
+      # 5.8 Smoke Test: Realtor API → /health debe devolver 200
+      - name: 🔍 Smoke Test: Realtor API Health
+        run: |
+          set -e
+          HTTP_STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health)
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ Realtor API health devolvió $HTTP_STATUS"
+            exit 1
+          fi
+          echo "✔ Realtor API health OK"
+
+      # 5.9 Smoke Test: MLflow Model Registry → listar versiones de ${MODEL_NAME}
+      - name: 🔍 Smoke Test: MLflow Model Registry
+        run: |
+          export DOCKER_HOST="tcp://localhost:2375"
+          python3 - <<EOF
+import mlflow
+from mlflow.tracking import MlflowClient
+mlflow.set_tracking_uri("http://localhost:5000")
+client = MlflowClient()
+versions = client.search_model_versions("name='${{ env.MODEL_NAME }}'")
+print("Model versions encontradas:", len(versions))
+EOF
+
+      # 5.10 Smoke Test: Streamlit Home → debe devolver 200
+      - name: 🔍 Smoke Test: Streamlit Home
+        run: |
+          HTTP_STATUS2=$(curl -L -s -o /dev/null -w '%{http_code}' http://localhost:8501)
+          if [ "$HTTP_STATUS2" != "200" ]; then
+            echo "❌ Streamlit home devolvió $HTTP_STATUS2"
+            exit 1
+          fi
+          echo "✔ Streamlit home OK"
+
+      # 5.11 Apagar y limpiar todo (siempre que el job termine, pase o falle)
+      - name: 🧹 Apagar stack
+        if: always()
+        run: |
+          export DOCKER_HOST="tcp://localhost:2375"
+          docker compose -f ci-docker-compose.yml down -v
+
+######################################################################
+# 6) Volúmenes declarados (no necesario en CICD, pero quedan como referencia)
+######################################################################
+# (En el contexto de GitHub Actions no usamos volúmenes explícitos,
+#  pero tu docker-compose.yml define volúmenes: postgres-db-volume,
+#  mlflow_store, grafana_data, minio_data.)
