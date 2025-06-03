@@ -29,7 +29,8 @@ jobs:
       - name: Install dev deps
         run: |
           pip install --upgrade pip
-          pip install flake8 pytest apache-airflow==2.6.0
+          pip install apache-airflow==2.6.0 # Let Airflow handle its core deps first
+          pip install flake8 pytest         # Then install other tools
 
       - name: Flake8
         run: flake8 --max-line-length=120 --ignore=E203,W503,F401,E302,W504,E221,E265,E303,E241,E272,E127,E261,W293,W292,E305,W291 . # se ignoran varios errores para que el workflow no falle.
