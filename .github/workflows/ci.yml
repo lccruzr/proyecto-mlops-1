@@ -2,9 +2,9 @@ name: CI/CD MLOps
 
 on:
   push:
-    branches: [main, desarrollo]
+    branches: [master, desarrollo]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 env:
   MODEL_NAME: "realtor_rf"
