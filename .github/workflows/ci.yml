@@ -133,14 +133,9 @@ jobs:
           [ "$code" = "200" ]
 
       - name: Smoke MLflow
-        run: |
-          python3 - <<-EOF
-            import mlflow
-            from mlflow.tracking import MlflowClient
-            mlflow.set_tracking_uri("http://localhost:5000")
-            client = MlflowClient()
-            print("Encontradas", len(client.search_model_versions("name='${{ env.MODEL_NAME }}'")), "versiones")
-          EOF
+        env:
+          MODEL_NAME_ENV: ${{ env.MODEL_NAME }} # Pasa la variable de entorno del workflow
+        run: python3 scripts/smoke_test_mlflow.py # Ejecuta el script 
 
       - name: Smoke Streamlit
         run: |
