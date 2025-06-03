@@ -135,11 +135,11 @@ jobs:
       - name: Smoke MLflow
         run: |
           python3 - <<EOF
-          import mlflow
-          from mlflow.tracking import MlflowClient
-          mlflow.set_tracking_uri("http://localhost:5000")
-          client = MlflowClient()
-          print("Encontradas", len(client.search_model_versions("name='${{ env.MODEL_NAME }}'")), "versiones")
+            import mlflow
+            from mlflow.tracking import MlflowClient
+            mlflow.set_tracking_uri("http://localhost:5000")
+            client = MlflowClient()
+            print("Encontradas", len(client.search_model_versions("name='${{ env.MODEL_NAME }}'")), "versiones")
           EOF
 
       - name: Smoke Streamlit
