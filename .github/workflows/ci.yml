@@ -78,8 +78,8 @@ jobs:
         run: docker build -f airflow_dockerfile -t lccruzr9606/proyecto-airflow:latest .
 
       - name: Build API
-        working-directory: api
-        run: docker build -f ../api_dockerfile -t lccruzr9606/realtor-api:latest .
+        # Remove working-directory or set to root
+        run: docker build -f api_dockerfile -t lccruzr9606/realtor-api:latest . # Dockerfile is in root, context is . (root)
 
       - name: Build MLflow
         run: docker build -f mlflow_dockerfile -t lccruzr9606/mlflow-server:latest .
