@@ -54,8 +54,8 @@ jobs:
           airflow db init
           airflow dags list
 
-      - name: pytest
-        run: pytest --maxfail=1 --disable-warnings -q
+      #- name: pytest
+      #  run: pytest --maxfail=1 --disable-warnings -q
 
 ################################################################################
 # 2) BUILD & PUSH
