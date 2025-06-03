@@ -134,7 +134,7 @@ jobs:
 
       - name: Smoke MLflow
         run: |
-          python3 - <<EOF
+          python3 - <<-EOF
             import mlflow
             from mlflow.tracking import MlflowClient
             mlflow.set_tracking_uri("http://localhost:5000")
