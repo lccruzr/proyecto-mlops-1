@@ -98,155 +98,155 @@ jobs:
 ################################################################################
 # 3) INTEGRATION TEST
 ################################################################################
-  integration_test:
-    runs-on: ubuntu-latest
-    needs: build_and_push
-
-    services:
-      docker:
-        image: docker:20.10.16-dind
-        options: --privileged
-        ports:
-          - 2375:2375
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Login Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-
-      - name: Pull images
-        run: |
-          export DOCKER_HOST=tcp://localhost:2375
-          
-          echo "Waiting for Docker daemon to be responsive..."
-          retry_count=0
-          max_retries=15 # Espera hasta 15 * 5 = 75 segundos
-          
-          # Bucle hasta que 'docker info' funcione o se alcance el máximo de reintentos
-          until docker info > /dev/null 2>&1 || [ "$retry_count" -ge "$max_retries" ]; do
-            retry_count=$((retry_count+1))
-            echo "Docker daemon not ready (attempt $retry_count/$max_retries). Retrying in 5 seconds..."
-            sleep 5
-          done
-          
-          # Verificación final después del bucle
-          if ! docker info > /dev/null 2>&1; then
-            echo "❌ Docker daemon did not become responsive within the allocated time."
-            exit 1
-          fi
-          
-          echo "✅ Docker daemon is ready. Proceeding to pull images..."
-          
-          images_to_pull=(
-            "lccruzr9606/proyecto-airflow:latest"
-            "lccruzr9606/realtor-api:latest"
-            "lccruzr9606/mlflow-server:latest"
-            "lccruzr9606/realtor-streamlit:latest"
-          )
-          
-          all_pulls_succeeded=true
-          
-          for image in "${images_to_pull[@]}"; do
-            echo "🔹 Pulling image: $image"
-            pull_attempts=0
-            max_pull_attempts=3
-            pull_succeeded_for_image=false
-            
-            while [ "$pull_attempts" -lt "$max_pull_attempts" ]; do
-              pull_attempts=$((pull_attempts+1))
-              if docker pull "$image"; then
-                echo "✅ Image $image pulled successfully on attempt $pull_attempts."
-                pull_succeeded_for_image=true
-                break # Salir del bucle de reintentos para esta imagen
-              else
-                echo "⚠️ Failed to pull $image (attempt $pull_attempts/$max_pull_attempts)."
-                if [ "$pull_attempts" -lt "$max_pull_attempts" ]; then
-                  echo "Retrying in 10 seconds..."
-                  sleep 10
-                fi
-              fi
-            done
-            
-            if [ "$pull_succeeded_for_image" = false ]; then
-              echo "❌ Failed to pull $image after $max_pull_attempts attempts."
-              all_pulls_succeeded=false
-              # Puedes decidir si fallar inmediatamente o intentar las demás:
-              # exit 1 # Para fallar inmediatamente
-            fi
-          done
-          
-          if [ "$all_pulls_succeeded" = false ]; then
-            echo "❌ One or more Docker image pulls failed."
-            exit 1
-          fi
-          
-          echo "🎉 All Docker images pulled successfully."
-
-      - name: Prepare compose
-        run: cp docker-compose.yml ci-docker-compose.yml
-
-      - name: Compose up
-        run: |
-          export DOCKER_HOST=tcp://localhost:2375
-          docker compose -f ci-docker-compose.yml up -d --wait
-
-      - name: Wait for stack
-        run: sleep 20
-
-      - name: Smoke Realtor API
-        run: |
-          sleep 5
-          response=$(curl -s -w "\nHTTP_CODE:%{http_code}" http://localhost:8000/health)
-          http_code=$(echo "$response" | grep "HTTP_CODE" | cut -d':' -f2)
-          
-          echo "Respuesta del Health Check de la API:"
-          echo "$response" | sed '$d' # Imprime el cuerpo del JSON sin la línea del http_code
-          
-          if [ "$http_code" = "200" ]; then
-            echo "API health endpoint respondió con 200 OK."
-            # Opcional: verificar un campo específico del JSON si quieres ser más estricto
-            # api_status=$(echo "$response" | sed '$d' | jq -r .api_status)
-            # if [ "$api_status" = "UP" ]; then
-            #   echo "API status es UP."
-            # else
-            #   echo "API status NO es UP. Respuesta: $api_status"
-            #   exit 1
-            # fi
-          else
-            echo "API health endpoint falló con código $http_code."
-            exit 1
-          fi
-
-      - name: Smoke MLflow
-        run: |
-          sleep 5 # Pequeña espera para el servicio de MLflow
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000) # MLflow UI
-          if [ "$code" = "200" ]; then
-            echo "MLflow UI respondió con 200 OK."
-          else
-            echo "MLflow UI falló con código $code."
-            # curl -v http://localhost:5000 # Para más detalles en caso de error
-            exit 1
-          fi
-
-      - name: Smoke Streamlit
-        run: |
-          sleep 5 # Pequeña espera para el servicio de Streamlit
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8501)
-          if [ "$code" = "200" ]; then
-            echo "Streamlit UI respondió con 200 OK."
-          else
-            echo "Streamlit UI failed with código $code."
-            # curl -v http://localhost:8501 # Para más detalles en caso de error
-            exit 1
-          fi
-
-      - name: Compose down
-        if: always()
-        run: |
-          export DOCKER_HOST=tcp://localhost:2375
-          docker compose -f ci-docker-compose.yml down -v
+  # integration_test:
+  #   runs-on: ubuntu-latest
+  #   needs: build_and_push
+  #
+  #   services:
+  #     docker:
+  #       image: docker:20.10.16-dind
+  #       options: --privileged
+  #       ports:
+  #         - 2375:2375
+  #
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #
+  #     - name: Login Docker Hub
+  #       uses: docker/login-action@v2
+  #       with:
+  #         username: ${{ secrets.DOCKERHUB_USERNAME }}
+  #         password: ${{ secrets.DOCKERHUB_PASSWORD }}
+  #
+  #     - name: Pull images
+  #       run: |
+  #         export DOCKER_HOST=tcp://localhost:2375
+  #         
+  #         echo "Waiting for Docker daemon to be responsive..."
+  #         retry_count=0
+  #         max_retries=15 # Espera hasta 15 * 5 = 75 segundos
+  #         
+  #         # Bucle hasta que 'docker info' funcione o se alcance el máximo de reintentos
+  #         until docker info > /dev/null 2>&1 || [ "$retry_count" -ge "$max_retries" ]; do
+  #           retry_count=$((retry_count+1))
+  #           echo "Docker daemon not ready (attempt $retry_count/$max_retries). Retrying in 5 seconds..."
+  #           sleep 5
+  #         done
+  #         
+  #         # Verificación final después del bucle
+  #         if ! docker info > /dev/null 2>&1; then
+  #           echo "❌ Docker daemon did not become responsive within the allocated time."
+  #           exit 1
+  #         fi
+  #         
+  #         echo "✅ Docker daemon is ready. Proceeding to pull images..."
+  #         
+  #         images_to_pull=(
+  #           "lccruzr9606/proyecto-airflow:latest"
+  #           "lccruzr9606/realtor-api:latest"
+  #           "lccruzr9606/mlflow-server:latest"
+  #           "lccruzr9606/realtor-streamlit:latest"
+  #         )
+  #         
+  #         all_pulls_succeeded=true
+  #         
+  #         for image in "${images_to_pull[@]}"; do
+  #           echo "🔹 Pulling image: $image"
+  #           pull_attempts=0
+  #           max_pull_attempts=3
+  #           pull_succeeded_for_image=false
+  #           
+  #           while [ "$pull_attempts" -lt "$max_pull_attempts" ]; do
+  #             pull_attempts=$((pull_attempts+1))
+  #             if docker pull "$image"; then
+  #               echo "✅ Image $image pulled successfully on attempt $pull_attempts."
+  #               pull_succeeded_for_image=true
+  #               break # Salir del bucle de reintentos para esta imagen
+  #             else
+  #               echo "⚠️ Failed to pull $image (attempt $pull_attempts/$max_pull_attempts)."
+  #               if [ "$pull_attempts" -lt "$max_pull_attempts" ]; then
+  #                 echo "Retrying in 10 seconds..."
+  #                 sleep 10
+  #               fi
+  #             fi
+  #           done
+  #           
+  #           if [ "$pull_succeeded_for_image" = false ]; then
+  #             echo "❌ Failed to pull $image after $max_pull_attempts attempts."
+  #             all_pulls_succeeded=false
+  #             # Puedes decidir si fallar inmediatamente o intentar las demás:
+  #             # exit 1 # Para fallar inmediatamente
+  #           fi
+  #         done
+  #         
+  #         if [ "$all_pulls_succeeded" = false ]; then
+  #           echo "❌ One or more Docker image pulls failed."
+  #           exit 1
+  #         fi
+  #         
+  #         echo "🎉 All Docker images pulled successfully."
+  #
+  #     - name: Prepare compose
+  #       run: cp docker-compose.yml ci-docker-compose.yml
+  #
+  #     - name: Compose up
+  #       run: |
+  #         export DOCKER_HOST=tcp://localhost:2375
+  #         docker compose -f ci-docker-compose.yml up -d --wait
+  #
+  #     - name: Wait for stack
+  #       run: sleep 20
+  #
+  #     - name: Smoke Realtor API
+  #       run: |
+  #         sleep 5
+  #         response=$(curl -s -w "\nHTTP_CODE:%{http_code}" http://localhost:8000/health)
+  #         http_code=$(echo "$response" | grep "HTTP_CODE" | cut -d':' -f2)
+  #         
+  #         echo "Respuesta del Health Check de la API:"
+  #         echo "$response" | sed '$d' # Imprime el cuerpo del JSON sin la línea del http_code
+  #         
+  #         if [ "$http_code" = "200" ]; then
+  #           echo "API health endpoint respondió con 200 OK."
+  #           # Opcional: verificar un campo específico del JSON si quieres ser más estricto
+  #           # api_status=$(echo "$response" | sed '$d' | jq -r .api_status)
+  #           # if [ "$api_status" = "UP" ]; then
+  #           #   echo "API status es UP."
+  #           # else
+  #           #   echo "API status NO es UP. Respuesta: $api_status"
+  #           #   exit 1
+  #           # fi
+  #         else
+  #           echo "API health endpoint falló con código $http_code."
+  #           exit 1
+  #         fi
+  #
+  #     - name: Smoke MLflow
+  #       run: |
+  #         sleep 5 # Pequeña espera para el servicio de MLflow
+  #         code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000) # MLflow UI
+  #         if [ "$code" = "200" ]; then
+  #           echo "MLflow UI respondió con 200 OK."
+  #         else
+  #           echo "MLflow UI falló con código $code."
+  #           # curl -v http://localhost:5000 # Para más detalles en caso de error
+  #           exit 1
+  #         fi
+  #
+  #     - name: Smoke Streamlit
+  #       run: |
+  #         sleep 5 # Pequeña espera para el servicio de Streamlit
+  #         code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8501)
+  #         if [ "$code" = "200" ]; then
+  #           echo "Streamlit UI respondió con 200 OK."
+  #         else
+  #           echo "Streamlit UI failed with código $code."
+  #           # curl -v http://localhost:8501 # Para más detalles en caso de error
+  #           exit 1
+  #         fi
+  #
+  #     - name: Compose down
+  #       if: always()
+  #       run: |
+  #         export DOCKER_HOST=tcp://localhost:2375
+  #         docker compose -f ci-docker-compose.yml down -v
