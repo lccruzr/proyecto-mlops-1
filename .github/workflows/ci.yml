@@ -124,7 +124,7 @@ jobs:
           
           echo "Waiting for Docker daemon to be responsive..."
           retry_count=0
-          max_retries=12 # Espera hasta 12 * 5 = 60 segundos
+          max_retries=15 # Espera hasta 15 * 5 = 75 segundos
           
           # Bucle hasta que 'docker info' funcione o se alcance el máximo de reintentos
           until docker info > /dev/null 2>&1 || [ "$retry_count" -ge "$max_retries" ]; do
