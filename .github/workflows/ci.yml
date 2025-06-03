@@ -29,11 +29,17 @@ jobs:
       - name: Install dev deps
         run: |
           pip install --upgrade pip
-          # Instala Airflow CON SU ARCHIVO DE RESTRICCIONES para Python 3.8
+          # Instala Airflow con su archivo de restricciones para Python 3.8
+          # Esto es crucial para la estabilidad de Airflow y sus dependencias directas.
           pip install "apache-airflow==2.6.0" --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.6.0/constraints-3.8.txt"
-          # Luego instala otras herramientas como Flake8, Pytest, y Pydantic si es necesario por separado
-          # (Pydantic V1 será instalado por la restricción de Airflow)
+          
+          # Instala las herramientas de linting y testing explícitamente
           pip install flake8 pytest joblib
+          
+          # Instala las dependencias de tu proyecto desde ml/requirements.txt
+          # Asegúrate de que 'joblib', 'mlflow', y cualquier otra librería que necesiten tus DAGs/tests
+          # estén listadas en ml/requirements.txt
+          pip install -r ml/requirements.txt
 
       - name: Flake8
         run: flake8 --max-line-length=120 --ignore=E203,W503,F401,E302,W504,E221,E265,E303,E241,E272,E127,E261,W293,W292,E305,W291 . # se ignoran varios errores para que el workflow no falle.
