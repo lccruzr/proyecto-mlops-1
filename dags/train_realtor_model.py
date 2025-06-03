@@ -92,6 +92,13 @@ def _train_register(**ctx) -> None:
 
     df = pd.read_parquet(data_path)
     logging.info(f"📥 Datos cargados: {df.shape}")
+    
+    if 'brokered_by' in df.columns:
+        logging.info("🔄 Convirtiendo 'brokered_by' a tipo 'object' para tratamiento categórico.")
+        df['brokered_by'] = df['brokered_by'].astype(str) # O .astype(object)
+    else:
+        logging.warning("⚠️ Columna 'brokered_by' no encontrada en el DataFrame.")
+    
 
     X = df.drop(columns=[TARGET_COL])
     y = df[TARGET_COL]

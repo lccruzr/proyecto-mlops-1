@@ -56,7 +56,7 @@ st.markdown("---")
 # ────────────────────────────
 st.subheader("Ingresa los valores para predecir")
 
-brokered_by    = st.number_input("brokered_by (ID corredor)", min_value=0, value=23594, step=1)
+brokered_by    = st.text_input("brokered_by (ID corredor)", "23594.0")
 status         = st.selectbox("status", ["for_sale", "sold", "pending", "other"])
 bed            = st.number_input("bed (número de habitaciones)", min_value=0, value=2, step=1)
 bath           = st.number_input("bath (número de baños)", min_value=0, value=1, step=1)
@@ -79,7 +79,7 @@ if st.button("Predecir precio"):
     payload = {
         "records": [
             {
-                "brokered_by": int(brokered_by),
+                "brokered_by": brokered_by,
                 "status": status,
                 "bed": int(bed),
                 "bath": int(bath),

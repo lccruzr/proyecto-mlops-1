@@ -1,17 +1,17 @@
 """
 DAG: simulate_profesor_api
-Crea un dataset sintético de listados inmobiliarios para pruebas locales
-cuando el API real no está disponible.
+Genera un dataset sintético con el MISMO esquema que la API del profesor
+cuando el túnel/servicio real no está disponible.
 
-• Genera 1 000 filas con variables típicas de Realtor
-• Guarda Parquet + JSON de metadatos
-• El nombre del archivo replica al usado por ingest_api_profesor
+• 1 000 filas de variables tipo Realtor + precio
+• Guarda Parquet + JSON de metadatos en /opt/airflow/data/raw
+• El nombre de archivo replica el usado por ingest_api_profesor (YYYYMMDD_g4.parquet)
 """
 
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -21,49 +21,84 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 
-# -------- CONFIG RÁPIDA --------
+# ────────────────────────────
+# CONFIG RÁPIDA
+# ────────────────────────────
 RAW_FOLDER = Path("/opt/airflow/data/raw")
 RAW_FOLDER.mkdir(parents=True, exist_ok=True)
 
-GROUP_NUMBER = 4          # para el sufijo _g4.parquet
+GROUP_NUMBER = 4          # sufijo _g4.parquet
 N_ROWS = 1_000            # tamaño del dataset sintético
 SEED = 42                 # reproducibilidad
-SCHEDULE = None           # disparo manual; cámbialo a "@daily" si quieres
-# ------------------------------
+SCHEDULE = None           # “None” => solo manual
+# ────────────────────────────
 
 
 def _generate_dataset(**context: dict[str, Any]) -> None:
-    """Crea datos ficticios tipo Realtor y los guarda en Parquet + JSON."""
+    """Crea datos ficticios con el mismo esquema de la API del profesor."""
     rng = np.random.default_rng(SEED)
 
-    df = pd.DataFrame({
-        "AREA":        rng.uniform(40, 350, N_ROWS).round(1),          # m²
-        "BEDROOMS":    rng.integers(1, 6, N_ROWS),
-        "BATHROOMS":   rng.integers(1, 5, N_ROWS),
-        "ZIPCODE":     rng.choice(["75001", "33101", "90001", "10001"], N_ROWS),
-        "YEAR_BUILT":  rng.integers(1950, 2024, N_ROWS),
-        "LAT":         rng.uniform(25.0, 49.0, N_ROWS).round(6),
-        "LON":         rng.uniform(-124.0, -67.0, N_ROWS).round(6),
-        # Precio correlacionado con área, recámaras y ubicación
-        "price":       lambda: None,   # placeholder; calculamos abajo
-    })
+    # Combos (city, state, zip_code) predefinidos
+    combos = np.array(
+        [
+            ("Denver",      "Colorado",   "80206"),
+            ("Dallas",      "Texas",      "75001"),
+            ("Miami",       "Florida",    "33101"),
+            ("Los Angeles", "California", "90001"),
+            ("New York",    "New York",   "10001"),
+        ],
+        dtype=object,
+    )
+    chosen = combos[rng.integers(0, len(combos), N_ROWS)]
+    city = chosen[:, 0]
+    state = chosen[:, 1]
+    zip_code = chosen[:, 2]
+
+    status_choices = np.array(["for_sale", "sold", "pending", "other"])
+
+    df = pd.DataFrame(
+        {
+            "brokered_by": rng.integers(1_000, 50_000, N_ROWS),
+            "status": status_choices[rng.integers(0, len(status_choices), N_ROWS)],
+            "bed": rng.integers(1, 7, N_ROWS),
+            "bath": rng.integers(1, 5, N_ROWS),
+            "acre_lot": np.round(rng.uniform(0.05, 5.0, N_ROWS), 2),
+            "street": rng.integers(100_000, 999_999, N_ROWS),
+            "city": city,
+            "state": state,
+            "zip_code": zip_code,
+            "house_size": rng.integers(500, 6_000, N_ROWS),
+            "prev_sold_date": [
+                (datetime(1995, 1, 1) + timedelta(days=int(d))).date()
+                for d in rng.integers(0, 30 * 365, N_ROWS)
+            ],
+        }
+    )
+
+    # ---------- Calcular precio (target) ----------
+    base_price_m2 = rng.uniform(900, 1_400, N_ROWS)
+    bedroom_prem  = rng.uniform(10_000, 50_000, N_ROWS)
+    lot_prem      = df["acre_lot"] * 80_000
+    age_penalty   = (
+        (2025 - pd.to_datetime(df["prev_sold_date"]).dt.year)
+        * rng.uniform(200, 800, N_ROWS)
+    )
 
     df["price"] = (
-        df["AREA"] * rng.uniform(900, 1_400, N_ROWS) +
-        df["BEDROOMS"] * rng.uniform(10_000, 50_000, N_ROWS) -
-        (2025 - df["YEAR_BUILT"]) * rng.uniform(400, 900, N_ROWS)
-    ).round(-3)  # redondea a millar
+        df["house_size"] * base_price_m2
+        + df["bed"] * bedroom_prem
+        + lot_prem
+        - age_penalty
+    ).round(-3)
 
-    # ------------- guarda -------------
-    exec_date = context["ds_nodash"] if "ds_nodash" in context else \
-                datetime.utcnow().strftime("%Y%m%d")
-
+    # ---------- Guardar archivos ----------
+    exec_date = context.get("ds_nodash") or datetime.utcnow().strftime("%Y%m%d")
     parquet_path = RAW_FOLDER / f"{exec_date}_g{GROUP_NUMBER}.parquet"
     df.to_parquet(parquet_path, index=False)
 
     meta = {
         "generated": True,
-        "rows": N_ROWS,
+        "rows": len(df),
         "columns": list(df.columns),
         "group_number": GROUP_NUMBER,
         "exec_utc": datetime.utcnow().isoformat(),
@@ -78,12 +113,12 @@ def _generate_dataset(**context: dict[str, Any]) -> None:
 with DAG(
     dag_id="simulate_profesor_api",
     start_date=days_ago(1),
-    schedule_interval=SCHEDULE,   # dispara manualmente
+    schedule_interval=SCHEDULE,
     catchup=False,
-    tags=["dummy", "profesor_api"],
+    tags=["dummy", "profesor_api", "synthetic_data"],
 ) as dag:
 
-    generate = PythonOperator(
+    generate_dummy_data = PythonOperator(
         task_id="generate_dummy_data",
         python_callable=_generate_dataset,
         provide_context=True,

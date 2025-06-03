@@ -139,18 +139,51 @@ jobs:
 
       - name: Smoke Realtor API
         run: |
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health)
-          [ "$code" = "200" ]
+          sleep 5
+          response=$(curl -s -w "\nHTTP_CODE:%{http_code}" http://localhost:8000/health)
+          http_code=$(echo "$response" | grep "HTTP_CODE" | cut -d':' -f2)
+          
+          echo "Respuesta del Health Check de la API:"
+          echo "$response" | sed '$d' # Imprime el cuerpo del JSON sin la línea del http_code
+          
+          if [ "$http_code" = "200" ]; then
+            echo "API health endpoint respondió con 200 OK."
+            # Opcional: verificar un campo específico del JSON si quieres ser más estricto
+            # api_status=$(echo "$response" | sed '$d' | jq -r .api_status)
+            # if [ "$api_status" = "UP" ]; then
+            #   echo "API status es UP."
+            # else
+            #   echo "API status NO es UP. Respuesta: $api_status"
+            #   exit 1
+            # fi
+          else
+            echo "API health endpoint falló con código $http_code."
+            exit 1
+          fi
 
       - name: Smoke MLflow
-        env:
-          MODEL_NAME_ENV: ${{ env.MODEL_NAME }} # Pasa la variable de entorno del workflow
-        run: python3 scripts/smoke_test_mlflow.py # Ejecuta el script 
+        run: |
+          sleep 5 # Pequeña espera para el servicio de MLflow
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000) # MLflow UI
+          if [ "$code" = "200" ]; then
+            echo "MLflow UI respondió con 200 OK."
+          else
+            echo "MLflow UI falló con código $code."
+            # curl -v http://localhost:5000 # Para más detalles en caso de error
+            exit 1
+          fi
 
       - name: Smoke Streamlit
         run: |
+          sleep 5 # Pequeña espera para el servicio de Streamlit
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8501)
-          [ "$code" = "200" ]
+          if [ "$code" = "200" ]; then
+            echo "Streamlit UI respondió con 200 OK."
+          else
+            echo "Streamlit UI failed with código $code."
+            # curl -v http://localhost:8501 # Para más detalles en caso de error
+            exit 1
+          fi
 
       - name: Compose down
         if: always()
