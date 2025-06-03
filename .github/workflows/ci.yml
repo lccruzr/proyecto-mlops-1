@@ -43,7 +43,7 @@ jobs:
 
       - name: Flake8
         run: flake8 --max-line-length=120 --ignore=E203,W503,F401,E302,W504,E221,E265,E303,E241,E272,E127,E261,W293,W292,E305,W291,E501,E111,E117 .
-        
+
       - name: Syntax check
         run: python -m compileall .
 
@@ -121,10 +121,70 @@ jobs:
       - name: Pull images
         run: |
           export DOCKER_HOST=tcp://localhost:2375
-          docker pull lccruzr9606/proyecto-airflow:latest
-          docker pull lccruzr9606/realtor-api:latest
-          docker pull lccruzr9606/mlflow-server:latest
-          docker pull lccruzr9606/realtor-streamlit:latest
+          
+          echo "Waiting for Docker daemon to be responsive..."
+          retry_count=0
+          max_retries=12 # Espera hasta 12 * 5 = 60 segundos
+          
+          # Bucle hasta que 'docker info' funcione o se alcance el máximo de reintentos
+          until docker info > /dev/null 2>&1 || [ "$retry_count" -ge "$max_retries" ]; do
+            retry_count=$((retry_count+1))
+            echo "Docker daemon not ready (attempt $retry_count/$max_retries). Retrying in 5 seconds..."
+            sleep 5
+          done
+          
+          # Verificación final después del bucle
+          if ! docker info > /dev/null 2>&1; then
+            echo "❌ Docker daemon did not become responsive within the allocated time."
+            exit 1
+          fi
+          
+          echo "✅ Docker daemon is ready. Proceeding to pull images..."
+          
+          images_to_pull=(
+            "lccruzr9606/proyecto-airflow:latest"
+            "lccruzr9606/realtor-api:latest"
+            "lccruzr9606/mlflow-server:latest"
+            "lccruzr9606/realtor-streamlit:latest"
+          )
+          
+          all_pulls_succeeded=true
+          
+          for image in "${images_to_pull[@]}"; do
+            echo "🔹 Pulling image: $image"
+            pull_attempts=0
+            max_pull_attempts=3
+            pull_succeeded_for_image=false
+            
+            while [ "$pull_attempts" -lt "$max_pull_attempts" ]; do
+              pull_attempts=$((pull_attempts+1))
+              if docker pull "$image"; then
+                echo "✅ Image $image pulled successfully on attempt $pull_attempts."
+                pull_succeeded_for_image=true
+                break # Salir del bucle de reintentos para esta imagen
+              else
+                echo "⚠️ Failed to pull $image (attempt $pull_attempts/$max_pull_attempts)."
+                if [ "$pull_attempts" -lt "$max_pull_attempts" ]; then
+                  echo "Retrying in 10 seconds..."
+                  sleep 10
+                fi
+              fi
+            done
+            
+            if [ "$pull_succeeded_for_image" = false ]; then
+              echo "❌ Failed to pull $image after $max_pull_attempts attempts."
+              all_pulls_succeeded=false
+              # Puedes decidir si fallar inmediatamente o intentar las demás:
+              # exit 1 # Para fallar inmediatamente
+            fi
+          done
+          
+          if [ "$all_pulls_succeeded" = false ]; then
+            echo "❌ One or more Docker image pulls failed."
+            exit 1
+          fi
+          
+          echo "🎉 All Docker images pulled successfully."
 
       - name: Prepare compose
         run: cp docker-compose.yml ci-docker-compose.yml
