@@ -85,8 +85,8 @@ jobs:
         run: docker build -f mlflow_dockerfile -t lccruzr9606/mlflow-server:latest .
 
       - name: Build Streamlit
-        working-directory: ui
-        run: docker build -f ../streamlit_dockerfile -t lccruzr9606/realtor-streamlit:latest .
+        # working-directory: ui # Elimina o comenta esta línea
+        run: docker build -f streamlit_dockerfile -t lccruzr9606/realtor-streamlit:latest .
 
       - name: Push images
         run: |
