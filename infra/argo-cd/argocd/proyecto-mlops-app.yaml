@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/lccruzr/proyecto-mlops.git
+    repoURL: https://github.com/lccruzr/proyecto-mlops-1.git
     targetRevision: HEAD
     path: infra/argo-cd/apps/umbrella
     helm:

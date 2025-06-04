@@ -13,7 +13,7 @@ dependencies:
     version: 0.8.0
     repository: "oci://ghcr.io/community-charts"
   - name: minio
-    version: 12.8.0
+    version: 8.0.13
     repository: "https://charts.min.io/"
   - name: postgresql
     alias: postgres-metadata
