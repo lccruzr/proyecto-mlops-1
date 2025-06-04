@@ -1,183 +1,112 @@
 
-# Proyecto MLOps – Sistema End‑to‑End de Detección de Anomalías en Comercio Exterior
+# Proyecto MLOps - Sistema de Entrenamiento y Despliegue Automatizado con Kubernetes y Argo CD
 
-> **Objetivo**  
-Desplegar un pipeline completo de *Data Ingestion → Entrenamiento → Deploy → Monitorización* para dos datasets (Exportaciones y Sustancias Controladas) usando **Autoencoders**, análisis **SHAP** y un **grafo heterogéneo** *empresa ↔ sub‑partida ↔ puerto*.  
-El sistema funciona tanto en **Docker Compose (local)** como en **Kubernetes** gestionado por **Argo CD**.
+Este proyecto implementa una solución completa de MLOps utilizando herramientas como Kubernetes, Argo CD, MLflow, Airflow, Streamlit, FastAPI y GitHub Actions.
 
----
+## Estructura General
 
-## Tabla de Contenidos
-1. [Arquitectura General](#arquitectura-general)
-2. [Estructura de Directorios](#estructura-de-directorios)
-3. [Puesta en Marcha Rápida](#puesta-en-marcha-rápida)
-   * [Local – Docker Compose](#local--docker-compose)
-   * [Clúster – Argo CD + Helm](#clúster--argo-cd--helm)
-4. [CI / CD – GitHub Actions](#ci--cd--github-actions)
-5. [Servicios Principales](#servicios-principales)
-6. [Variables de Entorno](#variables-de-entorno)
-7. [Endpoints y Ejemplos](#endpoints-y-ejemplos)
-8. [Preguntas Frecuentes](#preguntas-frecuentes)
-9. [Licencia](#licencia)
-
----
-
-## Arquitectura General
-
-```mermaid
-flowchart LR
-    subgraph Ingesta
-        API_Fake-->|CSV| Raw_Postgres
-    end
-
-    subgraph ETL
-        Raw_Postgres --> Airflow{{"Airflow DAG: train_realtor_model"}}
-    end
-
-    Airflow --> MLflow[(MLflow Registry)]
-    Airflow --> MinIO[(MinIO Artifacts)]
-    MLflow -->|Promote/Stage| FastAPI
-    FastAPI --> Streamlit
-
-    subgraph Observabilidad
-        Prometheus --> Grafana
-        FastAPI --> Prometheus
-        Airflow --> Prometheus
-    end
 ```
-
----
-
-## Estructura de Directorios
-
-```text
-.
-├── api/                   # FastAPI de inferencia
-├── ui/                    # Streamlit dashboard
+proyecto-mlops/
+├── api/                   # API REST con FastAPI
+├── ui/                    # Interfaz visual con Streamlit
+├── ml/                    # Código de entrenamiento y modelo
 ├── dags/                  # DAGs de Airflow
-├── ml/                    # Entrenamiento offline (autoencoder, SHAP)
-├── locust/                # Test de carga
-├── infra/
-│   ├── prometheus.yml     # Scrape config (local)
-│   └── argo-cd/           # ★ Integración Kubernetes + Argo CD
-│       ├── argocd/        # Application manifest
-│       └── apps/umbrella/ # Helm umbrella chart + sub‑charts
-├── docker-compose.yml     # Stack local
-└── .github/workflows/     # CI / CD
+├── infra/                 # Infraestructura con Helm + ArgoCD
+│   └── argo-cd/
+│       ├── argocd/        # Manifest YAML de la aplicación ArgoCD
+│       └── apps/
+│           └── umbrella/  # Umbrella Helm chart
+├── .github/workflows/     # CI/CD con GitHub Actions
+├── docker-compose.yml
+└── README.md
 ```
 
 ---
 
-## Puesta en Marcha Rápida
+## Tecnologías principales
 
-### Local – Docker Compose
+- **Airflow**: Orquestación del entrenamiento
+- **MLflow**: Registro de experimentos y artefactos
+- **MinIO**: Almacenamiento S3-compatible
+- **PostgreSQL**: Metadata
+- **Grafana & Prometheus**: Monitoreo
+- **FastAPI**: Servicio de predicción
+- **Streamlit**: Visualización del modelo y SHAP
+- **GitHub Actions**: CI/CD
+- **Argo CD**: GitOps para despliegue continuo
+- **Helm**: Manejo de charts
+
+---
+
+## ¿Cómo levantar todo?
+
+### 1. Clonar el repositorio
 
 ```bash
-# 1. Construir y levantar servicios
-docker compose up -d --build
-
-# 2. Acceder
-MLflow      → http://localhost:5000
-Airflow     → http://localhost:8080  (user: airflow / pw: airflow)
-FastAPI     → http://localhost:8000/docs
-Streamlit   → http://localhost:8501
-Grafana     → http://localhost:3000  (admin / admin)
+git clone https://github.com/<usuario>/proyecto-mlops.git
+cd proyecto-mlops
 ```
 
-### Clúster – Argo CD + Helm
+### 2. Crear imágenes y subir a GHCR (vía GitHub Actions)
 
-1. **Instala Argo CD** (solo la primera vez):
+Al hacer push en `main`, se activan los workflows que:
+- Construyen imágenes Docker para `api` y `ui`
+- Las publican en GitHub Container Registry (GHCR)
+- Actualizan automáticamente `values.yaml` con el nuevo SHA
+- Argo CD sincroniza automáticamente
 
-   ```bash
-   kubectl create namespace argocd
-   helm repo add argo https://argo-cd-community.github.io/helm-charts
-   helm upgrade --install argocd argo/argo-cd -n argocd          --set configs.params."server\.insecure"=true
-   ```
+### 3. Crear secret para GHCR en Kubernetes
 
-2. **Aplica la Application** (una vez):
+```bash
+kubectl create ns mlops
+kubectl -n mlops create secret docker-registry ghcr \
+  --docker-username=<tu_usuario_github> \
+  --docker-password=<tu_token_personal> \
+  --docker-email=ci@github
+```
 
-   ```bash
-   kubectl apply -f infra/argo-cd/argocd/proyecto-mlops-app.yaml
-   ```
+### 4. Aplicar la aplicación en Argo CD
 
-3. **Observa la sincronización**:
+```bash
+kubectl apply -f infra/argo-cd/argocd/proyecto-mlops-app.yaml
+```
 
-   ```bash
-   kubectl -n argocd get applications proyecto-mlops -w
-   ```
+Luego sincroniza en la interfaz de Argo CD.
 
-4. **Secrets requeridos** (ejemplo para MinIO):
+### 5. Acceder a los servicios
 
-   ```bash
-   kubectl -n mlops create secret generic mlops-minio          --from-literal=AWS_ACCESS_KEY_ID=minioadmin          --from-literal=AWS_SECRET_ACCESS_KEY=minioadmin
-   ```
+```bash
+kubectl -n mlops port-forward svc/api 8000:8000
+kubectl -n mlops port-forward svc/ui 8501:8501
+kubectl -n mlops port-forward svc/mlflow 5000:5000
+```
 
----
-
-## CI / CD – GitHub Actions
-
-* `build-images`  
-  ‑ Compila imágenes de **FastAPI** y **Streamlit** → publica en **GHCR**.
-
-* `bump-manifest`  
-  ‑ Actualiza `.global.sha` en `values.yaml`, hace commit y abre PR.  
-  ‑ Al fusionar, **Argo CD** despliega la nueva versión (automático).
-
----
-
-## Servicios Principales
-
-| Servicio | Descripción | Puerto (local) |
-|----------|-------------|----------------|
-| **FastAPI** | API de inferencia (sirve el último modelo en stage *Production*) | 8000 |
-| **Streamlit UI** | Front interactivo para analistas | 8501 |
-| **MLflow** | Seguimiento de experimentos + registry de modelos | 5000 |
-| **Airflow** | Orquestación de ETL y entrenamiento | 8080 |
-| **MinIO** | S3 compatible (artefactos de MLflow) | 9000 |
-| **Postgres (raw)** | Almacén de datos crudos | 5432 |
-| **Postgres (metadata)** | Features & metadatos | 5433 |
-| **Prometheus** | Métricas | 9090 |
-| **Grafana** | Dashboards | 3000 |
+- API (FastAPI): http://localhost:8000/docs
+- UI (Streamlit): http://localhost:8501
+- MLflow: http://localhost:5000
 
 ---
 
-## Variables de Entorno
+## Flujo MLOps
 
-| Variable | Ejemplo (local) | Descripción |
-|----------|-----------------|-------------|
-| `MLFLOW_TRACKING_URI` | `http://mlflow:5000` | URL usada por FastAPI/Airflow |
-| `MLFLOW_S3_ENDPOINT_URL` | `http://minio:9000` | End‑point S3 para artefactos |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `minioadmin` | Credenciales MinIO |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` | `mlops` | Usuarios para ambas bases |
-| `MODEL_STAGE` | `Production` | Stage del modelo a servir |
+1. **Airflow** simula datos, entrena y registra modelos en MLflow.
+2. El modelo se expone a través de una API (`api`) y una interfaz (`ui`).
+3. **Argo CD** mantiene el estado del clúster sincronizado con Git.
+4. Todo se orquesta desde GitHub Actions (CI/CD).
 
 ---
 
-## Endpoints y Ejemplos
+## Estado final esperado
 
-* **Predicción simple (JSON)**  
-  ```bash
-  curl -X POST http://localhost:8000/predict         -H "Content-Type: application/json"         -d '{"empresa":"ABC","subpartida":"110100","puerto":"CARTAGENA"}'
-  ```
-
-* **Dashboard SHAP**  
-  Abre `http://localhost:8501` y navega a la pestaña **Interpretabilidad**.
+- Aplicación `proyecto-mlops` en Argo CD → `Synced / Healthy`
+- Todos los pods corriendo en `mlops`
+- Modelos registrados en MLflow
+- API y UI funcionando
+- Dashboards activos (opcional en Grafana)
 
 ---
 
-## Preguntas Frecuentes
+## 🧑‍💻 Autores
 
-**¿Dónde veo los modelos?**  
-En MLflow → pestaña *Models*. Cuando el DAG `train_realtor_model` finaliza, promueve el mejor experimento a *Production*.
-
-**¿Puedo escalar FastAPI?**  
-En Kubernetes, ajusta `replicas` en `infra/argo-cd/apps/umbrella/charts/api/values.yaml`.
-
-**¿Cómo añado un nuevo DAG?**  
-Crea el archivo en `dags/` y asegúrate de que el GitSync de Airflow (ya configurado) lo recoja.
-
----
-
-## Licencia
-
-MIT © 2025 ‑ Grupo 4 – Maestría MLOps
+- **lccruzr**
+- **SubjectumJC**
