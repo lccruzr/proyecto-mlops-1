@@ -97,6 +97,9 @@ jobs:
   bump-manifest:
     needs: build_and_push
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
