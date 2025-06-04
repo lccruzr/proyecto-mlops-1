@@ -1,9 +1,9 @@
-# Global tag injected by CI
+# Global tag injected by CI bump-manifest job
 global:
   sha: "latest"
 
 imagePullSecrets:
-  - name: ghcr
+  - name: dockerhub
 
 airflow:
   executor: "LocalExecutor"
@@ -11,17 +11,17 @@ airflow:
     gitSync:
       enabled: true
       repo: https://github.com/lccruzr/proyecto-mlops
-      branch: main
+      branch: master
       depth: 1
 
 mlflow:
   image:
-    repository: ghcr.io/lccruzr/mlflow
+    repository: lccruzr9606/mlflow-server
     tag: "{{ .Values.global.sha }}"
 
 api:
   image:
-    repository: ghcr.io/lccruzr/mlops-api
+    repository: lccruzr9606/realtor-api
     tag: "{{ .Values.global.sha }}"
   env:
     - name: MLFLOW_TRACKING_URI
@@ -29,7 +29,7 @@ api:
 
 ui:
   image:
-    repository: ghcr.io/lccruzr/mlops-ui
+    repository: lccruzr9606/realtor-streamlit
     tag: "{{ .Values.global.sha }}"
   env:
     - name: API_URL

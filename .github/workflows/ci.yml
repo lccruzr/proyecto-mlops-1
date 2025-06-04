@@ -58,42 +58,70 @@ jobs:
       #  run: pytest --maxfail=1 --disable-warnings -q
 
 ################################################################################
-# 2) BUILD & PUSH
+# 2) BUILD & PUSH (sin cambios salvo repo ya existente)
 ################################################################################
   build_and_push:
     runs-on: ubuntu-latest
     needs: lint_and_validate
-
     steps:
       - uses: actions/checkout@v3
-
-      - uses: docker/setup-buildx-action@v2
-
-      - uses: docker/login-action@v2
+      - name: Login Docker Hub
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-      - name: Build Airflow
-        run: docker build -f airflow_dockerfile -t lccruzr9606/proyecto-airflow:latest .
-
-      - name: Build API
-        # Remove working-directory or set to root
-        run: docker build -f api_dockerfile -t lccruzr9606/realtor-api:latest . # Dockerfile is in root, context is . (root)
-
-      - name: Build MLflow
-        run: docker build -f mlflow_dockerfile -t lccruzr9606/mlflow-server:latest .
-
-      - name: Build Streamlit
-        # working-directory: ui # Elimina o comenta esta línea
-        run: docker build -f streamlit_dockerfile -t lccruzr9606/realtor-streamlit:latest .
-
-      - name: Push images
+      - name: Build & push Airflow
         run: |
+          docker build -f airflow_dockerfile -t lccruzr9606/proyecto-airflow:latest .
           docker push lccruzr9606/proyecto-airflow:latest
+
+      - name: Build & push API
+        run: |
+          docker build -f api_dockerfile -t lccruzr9606/realtor-api:latest .
           docker push lccruzr9606/realtor-api:latest
+
+      - name: Build & push MLflow
+        run: |
+          docker build -f mlflow_dockerfile -t lccruzr9606/mlflow-server:latest .
           docker push lccruzr9606/mlflow-server:latest
+
+      - name: Build & push Streamlit
+        run: |
+          docker build -f streamlit_dockerfile -t lccruzr9606/realtor-streamlit:latest .
           docker push lccruzr9606/realtor-streamlit:latest
+
+################################################################################
+# 3) BUMP MANIFEST (NUEVO)
+################################################################################
+  bump-manifest:
+    needs: build_and_push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Update SHA in Helm values
+        run: |
+          yq -i '.global.sha = "${{ github.sha }}"'               infra/argo-cd/apps/umbrella/values.yaml
+
+      - name: Commit & open PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.email "ci@github"
+          git config --global user.name  "GitHub CI"
+          git checkout -b bump/${{ github.sha }}
+          git add infra/argo-cd/apps/umbrella/values.yaml
+          git commit -m "chore: bump image tag to ${{ github.sha }}"
+          git push -u origin HEAD
+          gh pr create --base master                        --title "Bump image tag"                        --body "Automated update to sha ${{ github.sha }}"
 
 ################################################################################
 # 3) INTEGRATION TEST

@@ -7,8 +7,8 @@ spec:
   project: default
   source:
     repoURL: https://github.com/lccruzr/proyecto-mlops.git
-    targetRevision: HEAD
-    path: apps/umbrella
+    targetRevision: master
+    path: infra/argo-cd/apps/umbrella
     helm:
       valueFiles:
         - values.yaml
