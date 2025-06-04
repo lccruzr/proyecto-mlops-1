@@ -27,7 +27,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: api/Dockerfile
+          file: api_dockerfile
           tags: ghcr.io/lccruzr/mlops-api:${{ github.sha }}
           push: true
 
@@ -36,7 +36,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ui/Dockerfile
+          file: streamlit_dockerfile
           tags: ghcr.io/lccruzr/mlops-ui:${{ github.sha }}
           push: true
 
