@@ -1,10 +1,8 @@
 # Global tag injected by CI
 global:
-  sha: "latest"
-
+  sha: "e9287a5d0edd1abd7a447113dc80ce96d96e80c8"
 imagePullSecrets:
   - name: ghcr
-
 airflow:
   executor: "LocalExecutor"
   dags:
@@ -13,12 +11,10 @@ airflow:
       repo: https://github.com/lccruzr/proyecto-mlops
       branch: main
       depth: 1
-
 mlflow:
   image:
     repository: ghcr.io/lccruzr/mlflow
     tag: "{{ .Values.global.sha }}"
-
 api:
   image:
     repository: ghcr.io/lccruzr/mlops-api
@@ -26,7 +22,6 @@ api:
   env:
     - name: MLFLOW_TRACKING_URI
       value: http://mlflow:5000
-
 ui:
   image:
     repository: ghcr.io/lccruzr/mlops-ui
@@ -34,12 +29,10 @@ ui:
   env:
     - name: API_URL
       value: http://api:8000
-
 minio:
   buckets:
     - name: mlflow-artifacts
       policy: none
-
 postgres-metadata:
   auth:
     postgresqlPassword: mlops
@@ -47,7 +40,6 @@ postgres-metadata:
     persistence:
       enabled: true
       size: 5Gi
-
 postgres-raw:
   auth:
     postgresqlPassword: mlops
@@ -55,6 +47,5 @@ postgres-raw:
     persistence:
       enabled: true
       size: 5Gi
-
 prometheus: {}
 grafana: {}
