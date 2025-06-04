@@ -1,0 +1,60 @@
+# Global tag injected by CI
+global:
+  sha: "latest"
+
+imagePullSecrets:
+  - name: ghcr
+
+airflow:
+  executor: "LocalExecutor"
+  dags:
+    gitSync:
+      enabled: true
+      repo: https://github.com/lccruzr/proyecto-mlops
+      branch: main
+      depth: 1
+
+mlflow:
+  image:
+    repository: ghcr.io/lccruzr/mlflow
+    tag: "{{ .Values.global.sha }}"
+
+api:
+  image:
+    repository: ghcr.io/lccruzr/mlops-api
+    tag: "{{ .Values.global.sha }}"
+  env:
+    - name: MLFLOW_TRACKING_URI
+      value: http://mlflow:5000
+
+ui:
+  image:
+    repository: ghcr.io/lccruzr/mlops-ui
+    tag: "{{ .Values.global.sha }}"
+  env:
+    - name: API_URL
+      value: http://api:8000
+
+minio:
+  buckets:
+    - name: mlflow-artifacts
+      policy: none
+
+postgres-metadata:
+  auth:
+    postgresqlPassword: mlops
+  primary:
+    persistence:
+      enabled: true
+      size: 5Gi
+
+postgres-raw:
+  auth:
+    postgresqlPassword: mlops
+  primary:
+    persistence:
+      enabled: true
+      size: 5Gi
+
+prometheus: {}
+grafana: {}
