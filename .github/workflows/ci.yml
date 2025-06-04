@@ -71,4 +71,4 @@ jobs:
           git add infra/argo-cd/apps/umbrella/values.yaml
           git commit -m "chore: bump image tag to ${{ github.sha }}"
           git push -u origin HEAD
-          gh pr create --base main --title "Bump image tag" --body "Automated update to sha ${{ github.sha }}"
+          gh pr create --base main --title "Bump image tag" --body "Automated update to sha ${{ github.sha }}" 
