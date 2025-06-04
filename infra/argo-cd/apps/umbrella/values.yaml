@@ -1,11 +1,9 @@
 # Global tag inyectado por el job bump-manifest
 global:
-  sha: "latest"
-
+  sha: "1599995fe7a25c009809a2121fd8743955f8096e"
 # 👉  usa el secret "dockerhub" para extraer imágenes privadas
 imagePullSecrets:
   - name: dockerhub
-
 airflow:
   executor: "LocalExecutor"
   dags:
@@ -14,13 +12,11 @@ airflow:
       repo: https://github.com/lccruzr/proyecto-mlops
       branch: master
       depth: 1
-
 # Imágenes construidas por tu CI en Docker Hub
 mlflow:
   image:
     repository: lccruzr9606/mlflow-server
     tag: "{{ .Values.global.sha }}"
-
 api:
   image:
     repository: lccruzr9606/realtor-api
@@ -28,7 +24,6 @@ api:
   env:
     - name: MLFLOW_TRACKING_URI
       value: http://mlflow:5000
-
 ui:
   image:
     repository: lccruzr9606/realtor-streamlit
@@ -36,12 +31,10 @@ ui:
   env:
     - name: API_URL
       value: http://api:8000
-
 minio:
   buckets:
     - name: mlflow-artifacts
       policy: none
-
 postgres-metadata:
   auth:
     postgresqlPassword: mlops
@@ -49,7 +42,6 @@ postgres-metadata:
     persistence:
       enabled: true
       size: 5Gi
-
 postgres-raw:
   auth:
     postgresqlPassword: mlops
@@ -57,6 +49,5 @@ postgres-raw:
     persistence:
       enabled: true
       size: 5Gi
-
 prometheus: {}
 grafana: {}
