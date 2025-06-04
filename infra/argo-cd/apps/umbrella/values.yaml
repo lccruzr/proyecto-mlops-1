@@ -1,10 +1,9 @@
-# Global tag inyectado por el job bump-manifest
+# Global tag injected by CI
 global:
   sha: "latest"
 
-# 👉  usa el secret "dockerhub" para extraer imágenes privadas
 imagePullSecrets:
-  - name: dockerhub
+  - name: ghcr
 
 airflow:
   executor: "LocalExecutor"
@@ -12,18 +11,17 @@ airflow:
     gitSync:
       enabled: true
       repo: https://github.com/lccruzr/proyecto-mlops
-      branch: master
+      branch: main
       depth: 1
 
-# Imágenes construidas por tu CI en Docker Hub
 mlflow:
   image:
-    repository: lccruzr9606/mlflow-server
+    repository: ghcr.io/lccruzr/mlflow
     tag: "{{ .Values.global.sha }}"
 
 api:
   image:
-    repository: lccruzr9606/realtor-api
+    repository: ghcr.io/lccruzr/mlops-api
     tag: "{{ .Values.global.sha }}"
   env:
     - name: MLFLOW_TRACKING_URI
@@ -31,7 +29,7 @@ api:
 
 ui:
   image:
-    repository: lccruzr9606/realtor-streamlit
+    repository: ghcr.io/lccruzr/mlops-ui
     tag: "{{ .Values.global.sha }}"
   env:
     - name: API_URL

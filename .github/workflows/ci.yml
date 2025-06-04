@@ -1,119 +1,66 @@
-name: CI/CD MLOps
+name: Build & Deploy
 
 on:
   push:
-    branches: [master, desarrollo]
-  pull_request:
-    branches: [master]
-
-env:
-  MODEL_NAME: "realtor_rf"
-  MODEL_STAGE: "Production"
-  MLFLOW_URI: "http://mlflow:5000"
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-################################################################################
-# 1) LINT + TEST
-################################################################################
-  lint_and_validate:
+  build-images:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Setup Python 3.8
-        uses: actions/setup-python@v4
+      # Enable multi‑arch builds (optional but recommended)
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      # Log in to GitHub Container Registry
+      - uses: docker/login-action@v3
         with:
-          python-version: "3.8"
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install dev deps
-        run: |
-          pip install --upgrade pip
-          # Instala Airflow con su archivo de restricciones para Python 3.8
-          # Esto es crucial para la estabilidad de Airflow y sus dependencias directas.
-          pip install "apache-airflow==2.6.0" --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.6.0/constraints-3.8.txt"
-          
-          # Instala las herramientas de linting y testing explícitamente
-          pip install flake8 pytest joblib
-          
-          # Instala las dependencias de tu proyecto desde ml/requirements.txt
-          # Asegúrate de que 'joblib', 'mlflow', y cualquier otra librería que necesiten tus DAGs/tests
-          # estén listadas en ml/requirements.txt
-          pip install -r ml/requirements.txt
-
-      - name: Flake8
-        run: flake8 --max-line-length=120 --ignore=E203,W503,F401,E302,W504,E221,E265,E303,E241,E272,E127,E261,W293,W292,E305,W291,E501,E111,E117 .
-
-      - name: Syntax check
-        run: python -m compileall .
-
-      - name: Validate Airflow DAGs
-        run: |
-          export AIRFLOW_HOME=$(pwd)
-          export AIRFLOW__CORE__DAGS_FOLDER=$(pwd)/dags
-          airflow db init
-          airflow dags list
-
-      #- name: pytest
-      #  run: pytest --maxfail=1 --disable-warnings -q
-
-################################################################################
-# 2) BUILD & PUSH (sin cambios salvo repo ya existente)
-################################################################################
-  build_and_push:
-    runs-on: ubuntu-latest
-    needs: lint_and_validate
-    steps:
-      - uses: actions/checkout@v3
-      - name: Login Docker Hub
-        uses: docker/login-action@v2
+      # ---------- Build & push API ----------
+      - name: Build & push API image
+        uses: docker/build-push-action@v5
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          context: .
+          file: api/Dockerfile
+          tags: ghcr.io/lccruzr/mlops-api:${{ github.sha }}
+          push: true
 
-      - name: Build & push Airflow
-        run: |
-          docker build -f airflow_dockerfile -t lccruzr9606/proyecto-airflow:latest .
-          docker push lccruzr9606/proyecto-airflow:latest
+      # ---------- Build & push Streamlit UI ----------
+      - name: Build & push UI image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ui/Dockerfile
+          tags: ghcr.io/lccruzr/mlops-ui:${{ github.sha }}
+          push: true
 
-      - name: Build & push API
-        run: |
-          docker build -f api_dockerfile -t lccruzr9606/realtor-api:latest .
-          docker push lccruzr9606/realtor-api:latest
-
-      - name: Build & push MLflow
-        run: |
-          docker build -f mlflow_dockerfile -t lccruzr9606/mlflow-server:latest .
-          docker push lccruzr9606/mlflow-server:latest
-
-      - name: Build & push Streamlit
-        run: |
-          docker build -f streamlit_dockerfile -t lccruzr9606/realtor-streamlit:latest .
-          docker push lccruzr9606/realtor-streamlit:latest
-
-################################################################################
-# 3) BUMP MANIFEST (NUEVO)
-################################################################################
+      # Add more images here if you have other custom services
   bump-manifest:
-    needs: build_and_push
+    needs: build-images
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Install yq for YAML editing
       - name: Install yq
         run: |
           sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
 
-      - name: Update SHA in Helm values
+      # Update the image SHA in Helm values
+      - name: Bump values.yaml
         run: |
-          yq -i '.global.sha = "${{ github.sha }}"'               infra/argo-cd/apps/umbrella/values.yaml
+          yq -i '.global.sha = "${{ github.sha }}"' infra/argo-cd/apps/umbrella/values.yaml
 
+      # Commit and open PR so Argo CD picks up the change
       - name: Commit & open PR
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -124,160 +71,4 @@ jobs:
           git add infra/argo-cd/apps/umbrella/values.yaml
           git commit -m "chore: bump image tag to ${{ github.sha }}"
           git push -u origin HEAD
-          gh pr create --base master                        --title "Bump image tag"                        --body "Automated update to sha ${{ github.sha }}"
-
-################################################################################
-# 3) INTEGRATION TEST
-################################################################################
-  # integration_test:
-  #   runs-on: ubuntu-latest
-  #   needs: build_and_push
-  #
-  #   services:
-  #     docker:
-  #       image: docker:20.10.16-dind
-  #       options: --privileged
-  #       ports:
-  #         - 2375:2375
-  #
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #
-  #     - name: Login Docker Hub
-  #       uses: docker/login-action@v2
-  #       with:
-  #         username: ${{ secrets.DOCKERHUB_USERNAME }}
-  #         password: ${{ secrets.DOCKERHUB_PASSWORD }}
-  #
-  #     - name: Pull images
-  #       run: |
-  #         export DOCKER_HOST=tcp://localhost:2375
-  #         
-  #         echo "Waiting for Docker daemon to be responsive..."
-  #         retry_count=0
-  #         max_retries=15 # Espera hasta 15 * 5 = 75 segundos
-  #         
-  #         # Bucle hasta que 'docker info' funcione o se alcance el máximo de reintentos
-  #         until docker info > /dev/null 2>&1 || [ "$retry_count" -ge "$max_retries" ]; do
-  #           retry_count=$((retry_count+1))
-  #           echo "Docker daemon not ready (attempt $retry_count/$max_retries). Retrying in 5 seconds..."
-  #           sleep 5
-  #         done
-  #         
-  #         # Verificación final después del bucle
-  #         if ! docker info > /dev/null 2>&1; then
-  #           echo "❌ Docker daemon did not become responsive within the allocated time."
-  #           exit 1
-  #         fi
-  #         
-  #         echo "✅ Docker daemon is ready. Proceeding to pull images..."
-  #         
-  #         images_to_pull=(
-  #           "lccruzr9606/proyecto-airflow:latest"
-  #           "lccruzr9606/realtor-api:latest"
-  #           "lccruzr9606/mlflow-server:latest"
-  #           "lccruzr9606/realtor-streamlit:latest"
-  #         )
-  #         
-  #         all_pulls_succeeded=true
-  #         
-  #         for image in "${images_to_pull[@]}"; do
-  #           echo "🔹 Pulling image: $image"
-  #           pull_attempts=0
-  #           max_pull_attempts=3
-  #           pull_succeeded_for_image=false
-  #           
-  #           while [ "$pull_attempts" -lt "$max_pull_attempts" ]; do
-  #             pull_attempts=$((pull_attempts+1))
-  #             if docker pull "$image"; then
-  #               echo "✅ Image $image pulled successfully on attempt $pull_attempts."
-  #               pull_succeeded_for_image=true
-  #               break # Salir del bucle de reintentos para esta imagen
-  #             else
-  #               echo "⚠️ Failed to pull $image (attempt $pull_attempts/$max_pull_attempts)."
-  #               if [ "$pull_attempts" -lt "$max_pull_attempts" ]; then
-  #                 echo "Retrying in 10 seconds..."
-  #                 sleep 10
-  #               fi
-  #             fi
-  #           done
-  #           
-  #           if [ "$pull_succeeded_for_image" = false ]; then
-  #             echo "❌ Failed to pull $image after $max_pull_attempts attempts."
-  #             all_pulls_succeeded=false
-  #             # Puedes decidir si fallar inmediatamente o intentar las demás:
-  #             # exit 1 # Para fallar inmediatamente
-  #           fi
-  #         done
-  #         
-  #         if [ "$all_pulls_succeeded" = false ]; then
-  #           echo "❌ One or more Docker image pulls failed."
-  #           exit 1
-  #         fi
-  #         
-  #         echo "🎉 All Docker images pulled successfully."
-  #
-  #     - name: Prepare compose
-  #       run: cp docker-compose.yml ci-docker-compose.yml
-  #
-  #     - name: Compose up
-  #       run: |
-  #         export DOCKER_HOST=tcp://localhost:2375
-  #         docker compose -f ci-docker-compose.yml up -d --wait
-  #
-  #     - name: Wait for stack
-  #       run: sleep 20
-  #
-  #     - name: Smoke Realtor API
-  #       run: |
-  #         sleep 5
-  #         response=$(curl -s -w "\nHTTP_CODE:%{http_code}" http://localhost:8000/health)
-  #         http_code=$(echo "$response" | grep "HTTP_CODE" | cut -d':' -f2)
-  #         
-  #         echo "Respuesta del Health Check de la API:"
-  #         echo "$response" | sed '$d' # Imprime el cuerpo del JSON sin la línea del http_code
-  #         
-  #         if [ "$http_code" = "200" ]; then
-  #           echo "API health endpoint respondió con 200 OK."
-  #           # Opcional: verificar un campo específico del JSON si quieres ser más estricto
-  #           # api_status=$(echo "$response" | sed '$d' | jq -r .api_status)
-  #           # if [ "$api_status" = "UP" ]; then
-  #           #   echo "API status es UP."
-  #           # else
-  #           #   echo "API status NO es UP. Respuesta: $api_status"
-  #           #   exit 1
-  #           # fi
-  #         else
-  #           echo "API health endpoint falló con código $http_code."
-  #           exit 1
-  #         fi
-  #
-  #     - name: Smoke MLflow
-  #       run: |
-  #         sleep 5 # Pequeña espera para el servicio de MLflow
-  #         code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000) # MLflow UI
-  #         if [ "$code" = "200" ]; then
-  #           echo "MLflow UI respondió con 200 OK."
-  #         else
-  #           echo "MLflow UI falló con código $code."
-  #           # curl -v http://localhost:5000 # Para más detalles en caso de error
-  #           exit 1
-  #         fi
-  #
-  #     - name: Smoke Streamlit
-  #       run: |
-  #         sleep 5 # Pequeña espera para el servicio de Streamlit
-  #         code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8501)
-  #         if [ "$code" = "200" ]; then
-  #           echo "Streamlit UI respondió con 200 OK."
-  #         else
-  #           echo "Streamlit UI failed with código $code."
-  #           # curl -v http://localhost:8501 # Para más detalles en caso de error
-  #           exit 1
-  #         fi
-  #
-  #     - name: Compose down
-  #       if: always()
-  #       run: |
-  #         export DOCKER_HOST=tcp://localhost:2375
-  #         docker compose -f ci-docker-compose.yml down -v 
+          gh pr create --base main --title "Bump image tag" --body "Automated update to sha ${{ github.sha }}"
