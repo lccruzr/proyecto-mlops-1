@@ -1,7 +1,8 @@
-# Global tag injected by CI bump-manifest job
+# Global tag inyectado por el job bump-manifest
 global:
   sha: "latest"
 
+# 👉  usa el secret "dockerhub" para extraer imágenes privadas
 imagePullSecrets:
   - name: dockerhub
 
@@ -14,6 +15,7 @@ airflow:
       branch: master
       depth: 1
 
+# Imágenes construidas por tu CI en Docker Hub
 mlflow:
   image:
     repository: lccruzr9606/mlflow-server
